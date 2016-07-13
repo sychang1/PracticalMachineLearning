@@ -1,0 +1,156 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "S. Y. Chang"
+date: "2016/7/13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement : a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks ( More information is available from the website here: http://groupware.les.inf.puc-rio.br/har).
+ 
+ In this project, we use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. Our goal is to predict the manner in which the participants do the exercise. We will explore the gathered data, extract the relevant features and then apply different machine learning methods. 
+ 
+## Read Data and Load Libraries
+
+```{r, cache=TRUE}
+# Load the data and libraries.
+library("caret")
+library("MASS")
+library("rpart")
+library("randomForest")
+dat <- read.csv("pml-training.csv",sep=",", na.strings = c("","NA","#DIV/0!"))
+testing <- read.csv("pml-testing.csv",sep=",",na.string=c("","NA","#DIV/0!"))
+```
+
+## Feature Selection
+
+### Some Exploratory Analysis
+
+The data sets have too many columns (variables) to display in a single plot. Instead, let us see how big they are.
+```{r, cache=TRUE}
+dim(dat)
+dim(testing)
+```
+"dat" is quite big (many rows). This would be enough for training and validation.
+"testing" has relatively small number of rows (20). This one would be appropriate for
+the final test and to answer the quiz questions.
+
+### Clean NAs and near zero variance predictors.
+
+The raw data has a lot of NAs in it as we can see:
+```{r, cache=TRUE}
+# The proportion of the NAs seems to be quite large.
+round(sum(is.na(dat))/(sum(!is.na(dat))+sum(is.na(dat))),3)
+```
+
+As usual, different columns represent different predictors. Thus, we first eliminate the columns with less than 3% non-zero values. Also, we eliminate the columns with near zero variance. As a consequence, the proportion of NAs is now 0.
+
+```{r, cache=TRUE}
+# Clean the predictors (columns) that have less than 3% non-zero values.
+inZero <- which(colMeans(!is.na(dat))<0.03)        
+dat <- dat[,-inZero]
+testing <- testing[,-inZero]
+
+# Clean near zero variance predictors.
+inNearZeroVar <- nearZeroVar(dat)
+dat <- dat[,-inNearZeroVar]
+testing <- testing[,-inNearZeroVar]
+
+# Now, the proportion of NAs is zero.
+round(sum(is.na(dat))/(sum(!is.na(dat))+sum(is.na(dat))),3)
+```
+
+### Eliminate numbering and time labels
+
+We notice that the variables "X" and "problem_id" are just numbering labels. 
+Also, the columns corresponding to the time labels would not be relevant. 
+So, let's get rid of them.
+
+```{r, cache=TRUE}
+# Remove numbering labels.
+dat <- dat[,-which(names(dat)=="X")]
+testing <- testing[,-which(names(testing)=="X" | names(testing) == "problem_id")]
+
+# Remove the time labels.
+dat <- dat[, -grep("time", names(dat))]
+testing <- testing[, -grep("time", names(testing))]
+```
+
+After all these cleanings, the dimension of the data (number of columns) has been substantially reduced as we can see below:
+```{r, cache=TRUE}
+dim(dat)
+dim(testing)
+```
+
+## Partitioning of the Data
+
+Let us partition the data set into 70% training set and 30% validation set.
+The test set is already given as a separate data frame. Thus, there is no need to further partition it.
+
+```{r, cache=TRUE}
+inTrain <- createDataPartition(dat$classe, p=0.7, list=FALSE) 
+training <- dat[inTrain,]                                   
+validation <- dat[-inTrain,]
+
+```
+
+## Try Several Predictive Methods
+
+Here, we apply the machine learning algorithms to the training set and then
+calculate the accuracy using the validation set. We apply the LDA (linear discriminant analysis), classification tree and the random forest.
+
+```{r, cache=TRUE}
+# Apply LDA (linear discriminant analysis).
+fitLDA <- train(classe ~., data=training,method="lda")
+predLDA <- predict(fitLDA, validation)
+a1 <- confusionMatrix(predLDA, validation$classe)$overall[1]   # Accuracy.
+
+# Apply tree method.
+fitTree <- train(classe ~., data=training, method = "rpart")
+predTree <- predict(fitTree, validation)
+a2<- confusionMatrix(predTree, validation$classe)$overall[1]   # Accuracy.
+
+# Apply Random Forest.
+fitRF <- randomForest(classe ~., data=training)
+predRF <- predict(fitRF, validation)
+a3 <- confusionMatrix(predRF, validation$classe)$overall[1]   # Accuracy.
+```
+
+The predictive accuracies are as shown below:
+```{r, cache=TRUE}
+# Summarize the accuracies.
+print(paste(round(a1,3),round(a2,3),round(a3,3)))
+```
+We notice that the random forest shows the best accuracy by far. Thus, we pick this method to predict on the test set (next section). Before that, we show more validation details as below:
+
+```{r, cache=TRUE}
+# Random Forest confusion matrix and other out of sample metrics.
+confusionMatrix(predRF, validation$classe)
+```
+
+Finally, we show the 10 most important variables as following:
+```{r, cache=TRUE}
+Variable.Importance <- varImp(fitRF)[order(varImp(fitRF), decreasing=TRUE),]
+names(Variable.Importance) <- names(dat)[order(varImp(fitRF), decreasing=TRUE)]
+head(Variable.Importance, n=10)  
+```
+
+## Predict on the Test Set
+
+As we mentioned above, we picked the best performing method (Random Forest) and apply it to predict on the test set. This provides the answers to the prediction quiz.
+
+```{r, cache=TRUE}
+# Apply the test set and predict.
+pred_final <- predict(fitRF, testing)
+print(pred_final)
+```
+## Concluding Remarks
+
+ Cleaning the data set and eliminating those variables that are not relevant was helpful in implementing the machine learning algorithms. After all, we were able to make accurate predictions on the test set. The Random Forest proved to be superior to other methods tested in this report.
+
+
+
